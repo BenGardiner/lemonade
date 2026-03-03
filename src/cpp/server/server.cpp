@@ -1274,7 +1274,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
-    std::string model_id = req.matches[1];
+    std::string model_id = model_manager_->resolve_model_name(req.matches[1]);
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
@@ -2349,9 +2349,10 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
-        std::string model_name = request_json.contains("model") ?
+        std::string model_name = model_manager_->resolve_model_name(
+            request_json.contains("model") ?
             request_json["model"].get<std::string>() :
-            request_json["model_name"].get<std::string>();
+            request_json["model_name"].get<std::string>());
 
         // Extract optional parameters
         std::string checkpoint = request_json.value("checkpoint", "");
@@ -2432,7 +2433,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        model_name = request_json["model_name"];
+        model_name = model_manager_->resolve_model_name(request_json["model_name"]);
 
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
@@ -2521,6 +2522,9 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
                 } else if (request_json.contains("model") && request_json["model"].is_string()) {
                     model_name = request_json["model"].get<std::string>();
                 }
+                if (!model_name.empty()) {
+                    model_name = model_manager_->resolve_model_name(model_name);
+                }
             } catch (...) {
                 // Ignore parse errors, just unload all
             }
@@ -2566,9 +2570,10 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
     try {
         auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
-        std::string model_name = request_json.contains("model") ?
+        std::string model_name = model_manager_->resolve_model_name(
+            request_json.contains("model") ?
             request_json["model"].get<std::string>() :
-            request_json["model_name"].get<std::string>();
+            request_json["model_name"].get<std::string>());
 
         LOG(INFO, "Server") << "Deleting model: " << model_name << std::endl;
 
