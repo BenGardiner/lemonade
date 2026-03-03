@@ -56,7 +56,8 @@ bool ServerManager::start_server(
     bool is_ephemeral,
     const std::string& host,
     int max_loaded_models,
-    const std::string& extra_models_dir)
+    const std::string& extra_models_dir,
+    bool no_broadcast)
 {
     if (is_server_running()) {
         LOG(DEBUG, "ServerManager") << "Server is already running" << std::endl;
@@ -71,6 +72,7 @@ bool ServerManager::start_server(
     log_level_ = log_level;
     show_console_ = show_console;
     is_ephemeral_ = is_ephemeral;
+    no_broadcast_ = no_broadcast;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
 
@@ -239,7 +241,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_loaded_models_, extra_models_dir_);
+    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_loaded_models_, extra_models_dir_, no_broadcast_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -371,6 +373,11 @@ bool ServerManager::spawn_process() {
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
+    }
+
+    // Disable UDP broadcasting
+    if (no_broadcast_) {
+        cmdline += " --no-broadcast";
     }
 
     LOG(DEBUG, "ServerManager") << "Starting server: " << cmdline << std::endl;
@@ -581,6 +588,11 @@ bool ServerManager::spawn_process() {
         if (!extra_models_dir_.empty()) {
             args.push_back("--extra-models-dir");
             args.push_back(extra_models_dir_.c_str());
+        }
+
+        // Disable UDP broadcasting
+        if (no_broadcast_) {
+            args.push_back("--no-broadcast");
         }
 
         args.push_back(nullptr);
