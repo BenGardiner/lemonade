@@ -2414,6 +2414,26 @@ bool ModelManager::model_exists(const std::string& model_name) {
     return models_cache_.find(model_name) != models_cache_.end();
 }
 
+std::string ModelManager::resolve_model_name(const std::string& model_name) {
+    // 1. Check if the model name exists exactly as provided
+    if (model_exists(model_name)) {
+        return model_name;
+    }
+
+    // 2. Check for ":latest" suffix and strip it if the base name exists
+    const std::string suffix = ":latest";
+    if (model_name.size() > suffix.size() &&
+        model_name.compare(model_name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        std::string base_name = model_name.substr(0, model_name.size() - suffix.size());
+        if (model_exists(base_name)) {
+            return base_name;
+        }
+    }
+
+    // 3. Not found - return original name (caller will handle the "model not found" error)
+    return model_name;
+}
+
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
     // Check raw server_models_ JSON (before filtering)
     if (server_models_.contains(model_name)) {

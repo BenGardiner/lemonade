@@ -189,22 +189,10 @@ void OllamaApi::register_routes(httplib::Server& server) {
 }
 
 // ============================================================================
-// normalize model name (strip ":latest" suffix)
-// ============================================================================
-std::string OllamaApi::normalize_model_name(const std::string& name) {
-    const std::string suffix = ":latest";
-    if (name.size() > suffix.size() &&
-        name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
-        return name.substr(0, name.size() - suffix.size());
-    }
-    return name;
-}
-
-// ============================================================================
 // auto-load model if needed (mirrors Server::auto_load_model_if_needed)
 // ============================================================================
 void OllamaApi::auto_load_model(const std::string& model) {
-    std::string name = normalize_model_name(model);
+    std::string name = model_manager_->resolve_model_name(model);
 
     if (router_->is_model_loaded(name)) {
         return;
@@ -267,7 +255,7 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
     json openai_req;
 
     // Map model (normalize name)
-    std::string model = normalize_model_name(ollama_request.value("model", ""));
+    std::string model = model_manager_->resolve_model_name(ollama_request.value("model", ""));
     openai_req["model"] = model;
 
     // Map messages
@@ -336,7 +324,7 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
 json OllamaApi::convert_ollama_to_openai_completion(const json& ollama_request) {
     json openai_req;
 
-    std::string model = normalize_model_name(ollama_request.value("model", ""));
+    std::string model = model_manager_->resolve_model_name(ollama_request.value("model", ""));
     openai_req["model"] = model;
 
     // For /api/generate, if there's a "system" field and "prompt", combine into messages
@@ -546,7 +534,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
     try {
         auto request_json = json::parse(req.body);
 
-        std::string model = normalize_model_name(request_json.value("model", ""));
+        std::string model = model_manager_->resolve_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
@@ -648,7 +636,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = json::parse(req.body);
 
-        std::string model = normalize_model_name(request_json.value("model", ""));
+        std::string model = model_manager_->resolve_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
@@ -914,7 +902,7 @@ void OllamaApi::handle_tags(const httplib::Request& req, httplib::Response& res)
 void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = json::parse(req.body);
-        std::string name = normalize_model_name(request_json.value("name", request_json.value("model", "")));
+        std::string name = model_manager_->resolve_model_name(request_json.value("name", request_json.value("model", "")));
 
         if (name.empty()) {
             res.status = 400;
@@ -961,7 +949,7 @@ void OllamaApi::handle_delete(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = json::parse(req.body);
         // Ollama uses "name" field (not "model")
-        std::string name = normalize_model_name(request_json.value("name", request_json.value("model", "")));
+        std::string name = model_manager_->resolve_model_name(request_json.value("name", request_json.value("model", "")));
 
         if (name.empty()) {
             res.status = 400;
@@ -999,7 +987,7 @@ void OllamaApi::handle_delete(const httplib::Request& req, httplib::Response& re
 void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = json::parse(req.body);
-        std::string name = normalize_model_name(request_json.value("name", request_json.value("model", "")));
+        std::string name = model_manager_->resolve_model_name(request_json.value("name", request_json.value("model", "")));
 
         if (name.empty()) {
             res.status = 400;
@@ -1090,7 +1078,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
     try {
         auto request_json = json::parse(req.body);
 
-        std::string model = normalize_model_name(request_json.value("model", ""));
+        std::string model = model_manager_->resolve_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
@@ -1155,7 +1143,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
     try {
         auto request_json = json::parse(req.body);
 
-        std::string model = normalize_model_name(request_json.value("model", ""));
+        std::string model = model_manager_->resolve_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");

@@ -1111,22 +1111,25 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
-void Server::auto_load_model_if_needed(const std::string& requested_model) {
+std::string Server::auto_load_model_if_needed(const std::string& requested_model) {
+    // Resolve model name (handles :latest suffix and potentially other normalization)
+    std::string model_id = model_manager_->resolve_model_name(requested_model);
+
     // Check if this specific model is already loaded (multi-model aware)
-    if (router_->is_model_loaded(requested_model)) {
-        LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
-        return;
+    if (router_->is_model_loaded(model_id)) {
+        LOG(INFO, "Server") << "Model already loaded: " << model_id << std::endl;
+        return model_id;
     }
 
     // Log the auto-loading action
-    LOG(INFO, "Server") << "Auto-loading model: " << requested_model << std::endl;
+    LOG(INFO, "Server") << "Auto-loading model: " << model_id << std::endl;
 
     // Get model info
-    if (!model_manager_->model_exists(requested_model)) {
-        throw std::runtime_error("Model not found: " + requested_model);
+    if (!model_manager_->model_exists(model_id)) {
+        throw std::runtime_error("Model not found: " + model_id);
     }
 
-    auto info = model_manager_->get_model_info(requested_model);
+    auto info = model_manager_->get_model_info(model_id);
 
     // Download model if not cached (first-time use)
     // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
@@ -1134,22 +1137,24 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     //   - If model is NOT downloaded: Download it from HuggingFace
     //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(model_id)) {
         LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);
-        LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
+        LOG(INFO, "Server") << "Model download complete: " << model_id << std::endl;
 
         // CRITICAL: Refresh model info after download to get correct resolved_path
         // The resolved_path is computed based on filesystem, so we need fresh info now that files exist
-        info = model_manager_->get_model_info(requested_model);
+        info = model_manager_->get_model_info(model_id);
     }
 
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
-    LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
+    router_->load_model(model_id, info, RecipeOptions(info.recipe, json::object()), true);
+    LOG(INFO, "Server") << "Model loaded successfully: " << model_id << std::endl;
+
+    return model_id;
 }
 
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
@@ -1294,10 +1299,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
 
         // Handle model loading/switching
+        std::string loaded_model_id;
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                loaded_model_id = auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -1319,8 +1325,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
 
         // Check if the loaded model supports chat completion (only LLM models do)
-        std::string model_to_check = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
-        if (router_->get_model_type(model_to_check) != ModelType::LLM) {
+        // If loaded_model_id is empty, use get_most_recent_server() via empty string in get_model_type
+        if (router_->get_model_type(loaded_model_id) != ModelType::LLM) {
             LOG(ERROR, "Server") << "Model does not support chat completion" << std::endl;
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support chat completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
@@ -1513,10 +1519,11 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         auto request_json = nlohmann::json::parse(req.body);
 
         // Handle model loading/switching (same logic as chat_completions)
+        std::string loaded_model_id;
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                loaded_model_id = auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -1538,8 +1545,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         }
 
         // Check if the loaded model supports completion (only LLM models do)
-        std::string model_to_check = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
-        if (router_->get_model_type(model_to_check) != ModelType::LLM) {
+        if (router_->get_model_type(loaded_model_id) != ModelType::LLM) {
             LOG(ERROR, "Server") << "Model does not support completion" << std::endl;
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");

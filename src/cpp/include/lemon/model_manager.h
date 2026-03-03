@@ -104,6 +104,10 @@ public:
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
 
+    // Resolve model name by checking exact name, then name without :latest suffix
+    // Returns the canonical model name if found, or the original name if not
+    std::string resolve_model_name(const std::string& model_name);
+
     // Check if model exists in the raw registry (before filtering)
     // Returns true even for NPU models on systems without NPU
     bool model_exists_unfiltered(const std::string& model_name);
