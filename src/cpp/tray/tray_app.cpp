@@ -1204,7 +1204,8 @@ bool TrayApp::start_ephemeral_server(int port) {
         true,   // is_ephemeral (suppress startup message)
         server_config_.host,  // Pass host to ServerManager
         server_config_.max_loaded_models,
-        server_config_.extra_models_dir  // Pass extra models directory
+        server_config_.extra_models_dir,  // Pass extra models directory
+        server_config_.no_broadcast  // Forward --no-broadcast to router
     );
 
     if (!success) {
@@ -2266,7 +2267,8 @@ bool TrayApp::start_server() {
         is_service_active(), // is_ephemeral = true if systemd (suppress startup message)
         server_config_.host,        // Pass host to ServerManager
         server_config_.max_loaded_models,
-        server_config_.extra_models_dir  // Pass extra models directory
+        server_config_.extra_models_dir,  // Pass extra models directory
+        server_config_.no_broadcast  // Forward --no-broadcast to router
     );
 
     // Start log tail thread to show logs in console

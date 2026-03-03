@@ -1106,6 +1106,107 @@ class EndpointTests(ServerTestBase):
         )
         print("[OK] system-info contains release_url for backends")
 
+    # ========================================================================
+    # :latest suffix stripping tests
+    # ========================================================================
+
+    def test_030_models_retrieve_with_latest_suffix(self):
+        """Test retrieving a model by ID with :latest suffix resolves correctly."""
+        # Ensure model is available
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        model_ids = [m["id"] for m in response.json()["data"]]
+        self.assertIn(
+            ENDPOINT_TEST_MODEL, model_ids, "Model should exist before retrieve test"
+        )
+
+        # Retrieve using :latest suffix
+        response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}:latest",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["id"], ENDPOINT_TEST_MODEL)
+
+        print(f"[OK] Retrieved model with :latest suffix: {ENDPOINT_TEST_MODEL}")
+
+    def test_031_pull_model_with_latest_suffix(self):
+        """Test pulling a model with :latest suffix resolves correctly."""
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": f"{ENDPOINT_TEST_MODEL}:latest", "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertIn("status", data)
+        self.assertEqual(data["status"], "success")
+
+        print(f"[OK] Pull with :latest suffix: {ENDPOINT_TEST_MODEL}:latest")
+
+    def test_032_load_model_with_latest_suffix(self):
+        """Test loading a model with :latest suffix resolves correctly."""
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": f"{ENDPOINT_TEST_MODEL}:latest"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+
+        # Verify model is loaded (under its base name, not with :latest)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
+        health_data = health_response.json()
+        loaded_models = [
+            m["model_name"] for m in health_data.get("all_models_loaded", [])
+        ]
+        self.assertIn(ENDPOINT_TEST_MODEL, loaded_models)
+
+        print(f"[OK] Loaded model with :latest suffix: {ENDPOINT_TEST_MODEL}")
+
+    def test_033_unload_model_with_latest_suffix(self):
+        """Test unloading a model with :latest suffix resolves correctly."""
+        # Ensure model is loaded first
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        # Unload using :latest suffix
+        response = requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": f"{ENDPOINT_TEST_MODEL}:latest"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+
+        # Verify model is unloaded
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
+        health_data = health_response.json()
+        loaded_models = [
+            m["model_name"] for m in health_data.get("all_models_loaded", [])
+        ]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            loaded_models,
+            "Model should be unloaded after unload with :latest suffix",
+        )
+
+        print(f"[OK] Unloaded model with :latest suffix: {ENDPOINT_TEST_MODEL}")
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")

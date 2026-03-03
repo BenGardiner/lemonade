@@ -32,11 +32,26 @@ Router::~Router() {
 }
 
 WrappedServer* Router::find_server_by_model_name(const std::string& model_name) const {
+    // 1. Try exact match first (standard behavior)
     for (const auto& server : loaded_servers_) {
         if (server->get_model_name() == model_name) {
             return server.get();
         }
     }
+
+    // 2. Try resolved name if model_manager is available (e.g., strips ":latest" suffix)
+    // This allows clients to ask for "model:latest" and find it if it was loaded as "model"
+    if (model_manager_ && !model_name.empty()) {
+        std::string resolved_name = model_manager_->resolve_model_name(model_name);
+        if (resolved_name != model_name) {
+            for (const auto& server : loaded_servers_) {
+                if (server->get_model_name() == resolved_name) {
+                    return server.get();
+                }
+            }
+        }
+    }
+
     return nullptr;
 }
 

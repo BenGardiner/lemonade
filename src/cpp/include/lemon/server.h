@@ -108,7 +108,8 @@ private:
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
-    void auto_load_model_if_needed(const std::string& model_name);
+    // Returns the resolved model name (handles :latest suffix normalization)
+    std::string auto_load_model_if_needed(const std::string& model_name);
 
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
