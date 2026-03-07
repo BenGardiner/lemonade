@@ -20,6 +20,7 @@ Usage:
 """
 
 import asyncio
+import json
 import time
 import requests
 import numpy as np
@@ -770,6 +771,126 @@ class LLMTests(ServerTestBase):
         response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 0)
+
+    # =========================================================================
+    # MCP / TOOL CALL STRUCTURE TESTS
+    # =========================================================================
+
+    @skip_if_unsupported("tool_calls")
+    def test_023_tool_call_response_structure(self):
+        """Test that tool call responses have the correct MCP-compatible structure.
+
+        Validates the full tool call response shape required for MCP integration:
+        - tool_calls[0].type is "function"
+        - tool_calls[0].function.name matches the requested tool
+        - tool_calls[0].function.arguments is valid JSON
+        - The JSON arguments contain the required parameter key
+
+        This test confirms NPU/Ryzen AI models produce well-formed tool call
+        responses that MCP clients can parse and route correctly.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Run the calculator_calculate tool with expression set to 3+4",
+                }
+            ],
+            tools=[SAMPLE_TOOL],
+            max_completion_tokens=50,
+        )
+
+        tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
+        self.assertIsNotNone(tool_calls, "Response should have tool_calls")
+        self.assertGreater(len(tool_calls), 0, "Should have at least one tool call")
+
+        call = tool_calls[0]
+        self.assertEqual(call.type, "function", "Tool call type should be 'function'")
+        self.assertEqual(
+            call.function.name,
+            "calculator_calculate",
+            "Tool call function name should match SAMPLE_TOOL",
+        )
+
+        # Arguments must be valid JSON
+        try:
+            args = json.loads(call.function.arguments)
+        except (json.JSONDecodeError, TypeError) as e:
+            self.fail(f"Tool call arguments are not valid JSON: {e}")
+
+        # The required 'expression' parameter must be present
+        self.assertIn(
+            "expression",
+            args,
+            "Tool call arguments should contain the 'expression' key",
+        )
+        print(f"Tool call arguments: {args}")
+
+    @skip_if_unsupported("tool_calls")
+    def test_024_multi_turn_tool_calling_mcp_pattern(self):
+        """Test the full multi-turn MCP tool-use pattern.
+
+        Simulates the complete MCP flow:
+        1. User asks a question that requires a tool
+        2. Model responds with a tool call request
+        3. Client executes the tool and sends the result back
+        4. Model incorporates the result into a final natural-language answer
+
+        This test confirms NPU/Ryzen AI models can participate in the round-trip
+        MCP conversation pattern used by MCP-compatible clients such as VS Code
+        Copilot and n8n.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+
+        initial_messages = [
+            {
+                "role": "user",
+                "content": "Use the calculator_calculate tool with expression '6*7' and tell me the result.",
+            }
+        ]
+
+        # Turn 1: model requests the tool
+        first_response = client.chat.completions.create(
+            model=model,
+            messages=initial_messages,
+            tools=[SAMPLE_TOOL],
+            max_completion_tokens=50,
+        )
+
+        tool_calls = getattr(first_response.choices[0].message, "tool_calls", None)
+        self.assertIsNotNone(tool_calls, "First response should contain a tool call")
+        self.assertGreater(len(tool_calls), 0)
+
+        tool_call = tool_calls[0]
+        tool_call_id = tool_call.id
+        self.assertIsNotNone(tool_call_id, "Tool call must have an id for result routing")
+
+        # Turn 2: send the tool result back and ask for the final answer
+        follow_up_messages = initial_messages + [
+            first_response.choices[0].message,
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": "42",
+            },
+        ]
+
+        final_response = client.chat.completions.create(
+            model=model,
+            messages=follow_up_messages,
+            tools=[SAMPLE_TOOL],
+            max_completion_tokens=50,
+        )
+
+        final_content = final_response.choices[0].message.content
+        print(f"Final answer: {final_content}")
+        self.assertIsNotNone(final_content, "Final response should have content")
+        self.assertGreater(len(final_content), 0, "Final response should not be empty")
 
 
 if __name__ == "__main__":
