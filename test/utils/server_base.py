@@ -274,7 +274,8 @@ def start_server(
         cmd.extend(["--port", str(port)])
 
     # Add llamacpp backend option if specified
-    if wrapped_server == "llamacpp" and backend:
+    # "llamacpp-toolcall" is a CPU-only variant of llamacpp that uses a tool-call capable model
+    if wrapped_server in ("llamacpp", "llamacpp-toolcall") and backend:
         cmd.extend(["--llamacpp", backend])
 
     # Add sdcpp backend option if specified
