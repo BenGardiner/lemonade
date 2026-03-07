@@ -60,8 +60,40 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
+                # Use the smallest available model for CPU-only CI testing
+                "llm_cpu": "Tiny-Test-Model-GGUF",
                 "embedding": "nomic-embed-text-v2-moe-GGUF",
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
+            },
+        },
+        # llamacpp-toolcall is a CPU-only variant of llamacpp that uses Qwen3-0.6B-GGUF.
+        # Qwen3 models support tool calling natively; llama-server automatically disables
+        # the thinking step when a "tools" parameter is present in the request.
+        # Multi-model tests are disabled because MULTI_MODEL_TERTIARY is also Qwen3-0.6B-GGUF,
+        # which would conflict with model1 in the LRU eviction test.
+        "llamacpp-toolcall": {
+            "backends": ["cpu"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "embeddings": False,
+                "embeddings_batch": False,
+                "reranking": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": False,
+                "stop_parameter": True,
+                "echo_parameter": False,
+                "generation_parameters": False,
+            },
+            "test_models": {
+                "llm": "Qwen3-0.6B-GGUF",
             },
         },
         "ryzenai": {
